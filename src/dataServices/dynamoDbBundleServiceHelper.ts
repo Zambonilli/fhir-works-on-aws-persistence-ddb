@@ -11,7 +11,7 @@ import {
     TypeOperation,
     SystemOperation,
 } from 'fhir-works-on-aws-interface';
-import { DynamoDbUtil, TTL_IN_SECONDS_FIELD } from './dynamoDbUtil';
+import { buildHashKey, DynamoDbUtil, TTL_IN_SECONDS_FIELD } from './dynamoDbUtil';
 import DOCUMENT_STATUS from './documentStatus';
 import { DynamoDBConverter, RESOURCE_TABLE } from './dynamoDb';
 import DynamoDbParamBuilder from './dynamoDbParamBuilder';
@@ -29,6 +29,7 @@ export default class DynamoDbBundleServiceHelper {
         requests: BatchReadWriteRequest[],
         idToVersionId: Record<string, number>,
         ttlsInSeconds: Map<string, number> = new Map<string, number>(),
+        tenantId?: string,
     ) {
         const deleteRequests: any = [];
         const createRequests: any = [];
@@ -53,6 +54,7 @@ export default class DynamoDbBundleServiceHelper {
                         vid,
                         DOCUMENT_STATUS.PENDING,
                         ttlsInSeconds.get(request.resourceType),
+                        tenantId,
                     );
 
                     createRequests.push({
@@ -86,6 +88,7 @@ export default class DynamoDbBundleServiceHelper {
                         vid,
                         DOCUMENT_STATUS.PENDING,
                         ttlsInSeconds.get(request.resourceType),
+                        tenantId,
                     );
 
                     updateRequests.push({
@@ -119,6 +122,7 @@ export default class DynamoDbBundleServiceHelper {
                             id,
                             vid,
                             resourceType,
+                            tenantId,
                         ),
                     );
                     newBundleEntryResponses.push({
@@ -139,7 +143,7 @@ export default class DynamoDbBundleServiceHelper {
                         Get: {
                             TableName: RESOURCE_TABLE,
                             Key: DynamoDBConverter.marshall({
-                                id,
+                                id: buildHashKey(id, tenantId),
                                 vid,
                             }),
                         },
@@ -170,7 +174,7 @@ export default class DynamoDbBundleServiceHelper {
         };
     }
 
-    static generateRollbackRequests(bundleEntryResponses: BatchReadWriteResponse[]) {
+    static generateRollbackRequests(bundleEntryResponses: BatchReadWriteResponse[], tenantId?: string) {
         let itemsToRemoveFromLock: { id: string; vid: string; resourceType: string }[] = [];
         let transactionRequests: any = [];
         bundleEntryResponses.forEach(stagingResponse => {
@@ -188,6 +192,7 @@ export default class DynamoDbBundleServiceHelper {
                         stagingResponse.resourceType,
                         stagingResponse.id,
                         stagingResponse.vid,
+                        tenantId,
                     );
                     transactionRequests = transactionRequests.concat(transactionRequest);
                     itemsToRemoveFromLock = itemsToRemoveFromLock.concat(itemToRemoveFromLock);
@@ -204,8 +209,13 @@ export default class DynamoDbBundleServiceHelper {
         return { transactionRequests, itemsToRemoveFromLock };
     }
 
-    private static generateDeleteLatestRecordAndItemToRemoveFromLock(resourceType: string, id: string, vid: string) {
-        const transactionRequest = DynamoDbParamBuilder.buildDeleteParam(id, parseInt(vid, 10));
+    private static generateDeleteLatestRecordAndItemToRemoveFromLock(
+        resourceType: string,
+        id: string,
+        vid: string,
+        tenantId?: string,
+    ) {
+        const transactionRequest = DynamoDbParamBuilder.buildDeleteParam(id, parseInt(vid, 10), tenantId);
         const itemToRemoveFromLock = {
             id,
             vid,

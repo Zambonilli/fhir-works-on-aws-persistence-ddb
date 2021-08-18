@@ -6,7 +6,7 @@
 import { clone, generateMeta } from 'fhir-works-on-aws-interface';
 import flatten from 'flat';
 import _ from 'lodash';
-import { SEPARATOR } from '../constants';
+import { DDB_HASH_KEY_SEPARATOR, SEPARATOR } from '../constants';
 import DOCUMENT_STATUS from './documentStatus';
 
 export const DOCUMENT_STATUS_FIELD = 'documentStatus';
@@ -14,6 +14,15 @@ export const LOCK_END_TS_FIELD = 'lockEndTs';
 export const VID_FIELD = 'vid';
 export const REFERENCES_FIELD = '_references';
 export const TTL_IN_SECONDS_FIELD = '_ttlInSeconds';
+export const TENANT_ID_FIELD = '_tenantId';
+export const INTERNAL_ID_FIELD = '_id';
+
+export const buildHashKey = (id: string, tenantId?: string): string => {
+    if (tenantId) {
+        return `${tenantId}|${id}`;
+    }
+    return id;
+};
 
 export class DynamoDbUtil {
     static cleanItem(item: any) {
@@ -29,6 +38,18 @@ export class DynamoDbUtil {
         const id = item.id.split(SEPARATOR)[0];
         cleanedItem.id = id;
 
+        if (cleanedItem.id.includes(DDB_HASH_KEY_SEPARATOR)) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const [tenantId, resourceId] = cleanedItem.id.split(DDB_HASH_KEY_SEPARATOR);
+            if (resourceId === undefined) {
+                throw new Error(`Invalid schema for resource Id: ${cleanedItem.id}`);
+            }
+            cleanedItem.id = resourceId;
+        }
+
+        delete cleanedItem[TENANT_ID_FIELD];
+        delete cleanedItem[INTERNAL_ID_FIELD];
+
         return cleanedItem;
     }
 
@@ -38,9 +59,10 @@ export class DynamoDbUtil {
         vid: number,
         documentStatus: DOCUMENT_STATUS,
         ttlInSeconds?: number,
+        tenantId?: string,
     ) {
         const item = clone(resource);
-        item.id = id;
+        item.id = buildHashKey(id, tenantId);
         item.vid = vid;
         if (!_.isUndefined(ttlInSeconds)) {
             const unixNow: number = Math.floor(Date.now() / 1000);
@@ -57,6 +79,11 @@ export class DynamoDbUtil {
 
         item[DOCUMENT_STATUS_FIELD] = documentStatus;
         item[LOCK_END_TS_FIELD] = Date.now();
+
+        if (tenantId) {
+            item[TENANT_ID_FIELD] = tenantId;
+            item[INTERNAL_ID_FIELD] = id;
+        }
 
         // Format of flattenedResource
         // https://www.npmjs.com/package/flat

@@ -170,7 +170,9 @@ describe('atomicallyReadWriteResources', () => {
                     .withArgs('Organization', '1', 'meta')
                     .returns(Promise.resolve({ message: 'Resource found', resource: organizationResource }));
             }
-            const transactionService = new DynamoDbBundleService(dynamoDb, false, undefined, undefined, { versionedLinks });
+            const transactionService = new DynamoDbBundleService(dynamoDb, false, undefined, undefined, {
+                versionedLinks,
+            });
 
             const resourceType = 'Patient';
             const resource: any = {
