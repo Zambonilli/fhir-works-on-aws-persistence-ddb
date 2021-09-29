@@ -190,8 +190,8 @@ export default class DdbToEsHelper {
         // @ts-ignore
         const results = await Promise.allSettled(
             filteredPromiseParamAndIds.map(async paramAndId => {
+                let response;
                 try {
-                    let response;
                     if (type === 'upsert-AVAILABLE' || type === 'upsert-DELETED') {
                         response = await this.ElasticSearch.update(paramAndId.promiseParam);
                     } else if (type === 'delete') {
@@ -201,6 +201,10 @@ export default class DdbToEsHelper {
                     }
                     return response;
                 } catch (e) {
+                    if (type === 'delete' && e?.body?.result === 'not_found') {
+                        logger.warn(`document not found for delete ${paramAndId.id}`);
+                        return response;
+                    }
                     logger.error(`${type} failed on id: ${paramAndId.id}, due to error:\n${e}`);
                     throw e;
                 }
